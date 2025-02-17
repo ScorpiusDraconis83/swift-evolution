@@ -3,14 +3,13 @@
 * Proposal: [SE-0418](0418-inferring-sendable-for-methods.md)
 * Authors: [Angela Laar](https://github.com/angela-laar), [Kavon Farvardin](https://github.com/kavon), [Pavel Yaskevich](https://github.com/xedin)
 * Review Manager: [Becca Royal-Gordon](https://github.com/beccadax)
-* Status: **Accepted**
-* Implementation: [apple/swift#67498](https://github.com/apple/swift/pull/67498), [apple/swift#70076](https://github.com/apple/swift/pull/70076)
+* Status: **Implemented (Swift 6.0)**
 * Upcoming Feature Flag: `InferSendableFromCaptures`
 * Review: ([pitch](https://forums.swift.org/t/pitch-inferring-sendable-for-methods/66565)) ([review](https://forums.swift.org/t/se-0418-inferring-sendable-for-methods-and-key-path-literals/68999)) ([acceptance](https://forums.swift.org/t/accepted-se-0418-inferring-sendable-for-methods-and-key-path-literals/69242))
 
 ## Introduction
 
-This proposal is focused on a few corner cases in the language surrounding functions as values and key path literals when using concurrency. We propose Sendability should be inferred for partial and unapplied methods. We also propose to lift a Sendability restriction placed on key path literals in [SE-0302](https://github.com/apple/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md#key-path-literals) by allowing the developers to control whether key path literal is Sendable or not. The goal is to improve flexibility, simplicity, and ergonomics without significant changes to Swift.
+This proposal is focused on a few corner cases in the language surrounding functions as values and key path literals when using concurrency. We propose Sendability should be inferred for partial and unapplied methods. We also propose to lift a Sendability restriction placed on key path literals in [SE-0302](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md#key-path-literals) by allowing the developers to control whether key path literal is Sendable or not. The goal is to improve flexibility, simplicity, and ergonomics without significant changes to Swift.
 
 ## Motivation
 
@@ -35,7 +34,7 @@ let unapplied: (S) -> (() -> Void) = S.f
 ```
 
 
-Suppose we want to create a generic method that expects an unapplied function method conforming to Sendable as a parameter. We can create a protocol ``P`` that conforms to the `Sendable` protocol and tell our generic function to expect some generic type that conforms to ``P``. We can also use the `@Sendable` attribute, introduced for closures and functions in [SE-302](https://github.com/kavon/swift-evolution/blob/sendable-functions/proposals/0302-concurrent-value-and-concurrent-closures.md), to annotate the closure parameter.
+Suppose we want to create a generic method that expects an unapplied function method conforming to Sendable as a parameter. We can create a protocol `P` that conforms to the `Sendable` protocol and tell our generic function to expect some generic type that conforms to `P`. We can also use the `@Sendable` attribute, introduced for closures and functions in [SE-302](https://github.com/kavon/swift-evolution/blob/sendable-functions/proposals/0302-concurrent-value-and-concurrent-closures.md), to annotate the closure parameter.
 
 
 ```swift
@@ -77,7 +76,7 @@ However, this is a lot of churn to get the expected behavior. The compiler shoul
 
 **Key Paths**
 
-[SE-0302](https://github.com/apple/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md#key-path-literals) makes an explicit mention that all key path literals are treated as implicitly `Sendable` which means that they are not allowed to capture any non-`Sendable` values. This behavior is justified when key path values are passed across concurrency domains or otherwise involved in concurrently executed code but is too restrictive for non-concurrency related code.
+[SE-0302](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0302-concurrent-value-and-concurrent-closures.md#key-path-literals) makes an explicit mention that all key path literals are treated as implicitly `Sendable` which means that they are not allowed to capture any non-`Sendable` values. This behavior is justified when key path values are passed across concurrency domains or otherwise involved in concurrently executed code but is too restrictive for non-concurrency related code.
 
 ```swift
 class Info : Hashable {
@@ -192,7 +191,7 @@ It is important to note that **under the proposed rule all of the declarations t
 let name: KeyPath<User, String> = \.name // 🟢 but key path is **non-Sendable**
 ```
 
-Since Sendable is a marker protocol is should be possible to adjust all declarations where `& Sendable` is desirable without any ABI impact.
+Since Sendable is a marker protocol it should be possible to adjust all declarations where `& Sendable` is desirable without any ABI impact.
 
 Existing APIs that use key path in their parameter types or default values can add `Sendable` requirement in a non-ABI breaking way by marking existing declarations as @preconcurrency and adding `& Sendable` at appropriate positions:
 
@@ -226,7 +225,7 @@ This proposal includes five changes to `Sendable` behavior.
 
 The first two are what we just discussed regarding partial and unapplied methods.
 
-```
+```swift
 struct User : Sendable {
   var address: String
   var password: String
@@ -248,7 +247,7 @@ let partial : @Sendable (String, String) -> Void = User().changeAddress // no er
 ```
 
 
-These two rules include partially applied and unapplied static methods but do not include partially applied or unapplied mutable methods. Unapplied references to mutable methods are not allowed in the language because they can lead to undefined behavior.  More details about this can be found in [SE-0042](https://github.com/apple/swift-evolution/blob/main/proposals/0042-flatten-method-types.md).
+These two rules include partially applied and unapplied static methods but do not include partially applied or unapplied mutable methods. Unapplied references to mutable methods are not allowed in the language because they can lead to undefined behavior.  More details about this can be found in [SE-0042](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0042-flatten-method-types.md).
 
 
 3. A key path literal without non-Sendable type captures and references to actor-isolated properties and/or subscripts is going to be inferred as key path type with a `& Sendable` requirement or a function type with `@Sendable` attribute.
@@ -262,7 +261,7 @@ let ageKP = \User.age
 let infoKP = \User.[Info()]
 ```
 
-The type of age`KP` is `KeyPath<User, Int>` because `age` is isolated to a global actor. Similarly `infoKP` is a non-Sendable key path because `Info()` argument to a subscript reference has a non-Sendable type.
+The type of `ageKP` is `KeyPath<User, Int>` because `age` is isolated to a global actor. Similarly `infoKP` is a non-Sendable key path because `Info()` argument to a subscript reference has a non-Sendable type.
 
 Key path types respect all of the existing sub-typing rules related to Sendable protocol which means a key path that is not marked as Sendable cannot be assigned to a value that is Sendable.
 
@@ -271,7 +270,7 @@ let name: KeyPath<User, String> = \.name
 let otherName: KeyPath<User, String> & Sendable = \.name 🔴
 ```
 
-The conversion between key path and a `@Sendable` function doesn’t actually require the key path itself to be `Sendable` because the it’s not captured by the closure but wrapped by it.
+The conversion between key path and a `@Sendable` function doesn’t actually require the key path itself to be `Sendable` because it’s not captured by the closure but wrapped by it.
 
 ```swift
 let name: @Sendable (User) -> String = \.name 🟢
@@ -306,7 +305,6 @@ getValue(\.[NonSendable()]) // 🔴 This is invalid because key path captures a 
 func filter<T: Sendable>(_: @Sendable (User) -> T) {}
 filter(name) // 🟢 use of @Sendable applies a sendable key path
 ```
-
 
 Next is:
 
@@ -410,19 +408,14 @@ N/A
 
 ## Future Directions 
 
-Accessors are not currently allowed to participate with the `@Sendable` system in this proposal. It would be straight-forward to allow getters to do so in a future proposal if there was demand for this.
+Accessors are not currently allowed to participate with the `@Sendable` system in this proposal. It would be straightforward to allow getters to do so in a future proposal if there was demand for this.
 
 ## Alternatives Considered 
 
-Swift could forbid explicitly marking function declarations with the` @Sendable` attribute, since under this proposal there’s no longer any reason to do this.
+Swift could forbid explicitly marking function declarations with the `@Sendable` attribute, since under this proposal there’s no longer any reason to do this.
 
 ```swift
 /*@Sendable*/ func alwaysSendable() {}
 ```
 
 However, since these attributes are allowed today, this would be a source breaking change. Swift 6 could potentially include fix-its to remove `@Sendable` attributes to ease migration, but it’d still be disruptive. The attributes are harmless under this proposal, and they’re still sometimes useful for code that needs to compile with older tools, so we have chosen not to make this change in this proposal. We can consider deprecation at a later time if we find a good reason to do so.
-
-
-
-
-
